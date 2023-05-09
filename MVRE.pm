@@ -16,8 +16,10 @@ BEGIN {
     if ($@) { eval 'sub Sub::Util::set_subname($$) { return @_[1] }'; }
 }
 
-our %key = ();
-our %cache = ();
+our %desc;
+BEGIN { %desc = (); }
+our %cache = 0;
+
 our @args; # shared with main and cache
 our $DEBUG = 0;
 
@@ -57,8 +59,8 @@ Usage: mvre [-t] 'expr' files...
        shortcut keywords:
 EOF
 
-	foreach my $k (sort keys %key) {
-	    print STDERR "          $k => $key{$k}\n";
+	foreach my $k (sort keys %desc) {
+	    print STDERR "          $k => $desc{$k}\n";
 	}
 	print STDERR "\n";
 	exit 1;
@@ -111,7 +113,7 @@ sub def_regexp($$) {
     my ($k, $r) = @_;
     eval "package main; sub $k { $r }";
     die "while defining $k: $@" if $@;
-    $key{$k} = "$r";
+    $desc{$k} = "$r";
 }
 
 # ** def_proc(glob, sub, comment)
@@ -128,17 +130,21 @@ sub def_regexp($$) {
 #   The code shall update $_ according to desired operation.
 
 # If you do not need to support --help, simply
-# sub name {
-#   ...
-# }
-# will work.
+#   sub name {
+#     ...
+#   }
+# will work.  also, as an experimental support,
+#   sub digits : desc(comment) {
+#     ...
+#   }
+# will also work.
 
 sub def_proc(*&$) {
     my ($a, $proc, $help) = @_;
     my $name = *$a{NAME};
     my $package = *$a{PACKAGE};
     *$a = Sub::Util::set_subname("${package}::${name}", $proc);
-    $key{$name} = $help;
+    $desc{$name} = $help;
 }
 
 # ** cache(proc)
@@ -173,6 +179,24 @@ sub cache(&) {
     my @r = @{$cache{$key}};
     return wantarray ? @r : $r[0];
 }
+
+# experimental support for attributes;
+
+sub main_MODIFY_CODE_ATTRIBUTES($$@) {
+    my ($pkg, $ref, @attrs) = @_;
+    my @result = ();
+    foreach my $a (@attrs) {
+	if ($a =~ /\Adesc\((.+)\)\Z/) {
+	    my @subname = split("::", Sub::Util::subname($ref));
+	    $desc{$subname[-1]} = $1;
+	} else {
+	    push @result, $a;
+	}
+    }
+    return @result;
+}
+
+BEGIN { *main::MODIFY_CODE_ATTRIBUTES = \&main_MODIFY_CODE_ATTRIBUTES; }
 
 # predefined regular expressions
 {
@@ -214,6 +238,14 @@ MVRE::def_proc *digits, sub {
     };
     s/(\d+)/sprintf("%0${ndigits}d", $1)/ge;
 }, '(make numbers in filenames the same length)';
+
+# experimentally,
+#
+#   sub digits : desc((make numbers in filenames the same length)) {
+#    ...
+#   }
+#
+# will also work.
 
 # Japanese code conversions
 
