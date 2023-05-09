@@ -11,6 +11,11 @@ use strict;
 use Getopt::Long 'GetOptionsFromArray';
 Getopt::Long::Configure qw/bundling/;
 
+BEGIN {
+    eval { require Sub::Util; };
+    if ($@) { eval 'sub Sub::Util::set_subname($$) { return @_[1] }'; }
+}
+
 our %key = ();
 our %cache = ();
 our @args; # shared with main and cache
@@ -93,6 +98,12 @@ EOF
 
 ## APIs for extension writers
 
+# dsay: show diagnostic message when --debug is given
+
+sub dsay (@) {
+    print @_, "\n" if $DEBUG;
+}
+
 # def_regexp(name, expr_str)
 # define a shortcut with "name", doing r/// or tr/// specified in expr_str.
 
@@ -125,7 +136,8 @@ sub def_regexp($$) {
 sub def_proc(*&$) {
     my ($a, $proc, $help) = @_;
     my $name = *$a{NAME};
-    *$a = $proc;
+    my $package = *$a{PACKAGE};
+    *$a = Sub::Util::set_subname("${package}::${name}", $proc);
     $key{$name} = $help;
 }
 
@@ -152,6 +164,7 @@ sub cache(&) {
     my (@caller0) = caller(0);
     my (@caller1) = caller(1);
     my $key = "$caller1[3]\@$caller0[1]:$caller0[2]";
+    #dsay($key);
     if (!defined $cache{$key}) {
 	my @a = map { $_ . "" } @args;
 	my @r = &$f(@a);
@@ -159,12 +172,6 @@ sub cache(&) {
     }
     my @r = @{$cache{$key}};
     return wantarray ? @r : $r[0];
-}
-
-# dsay: show diagnostic message when --debug is given
-
-sub dsay (@) {
-    print @_, "\n" if $DEBUG;
 }
 
 # predefined regular expressions
