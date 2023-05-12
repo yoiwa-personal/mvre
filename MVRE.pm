@@ -1,12 +1,13 @@
 #!/usr/bin/perl
-
 ################################################################
 # MVRE: bulk rename files using regular expresson or any Perl syntax.
 ################################################################
 
-package MVRE;
+use 5.016;
 
 use strict;
+
+package MVRE;
 
 use Getopt::Long 'GetOptionsFromArray';
 Getopt::Long::Configure qw/bundling/;
@@ -20,23 +21,28 @@ our %desc;
 BEGIN { %desc = (); }
 our %cache = 0;
 
-our @args; # shared with main and cache
+our @cacheargs; # shared with main and cache
 our $DEBUG = 0;
 
 ## the main processing
 
 sub main {
-    @args = @main::ARGV;
+    my @args = @main::ARGV;
 
     my $force = 0;
     my $test = 0;
     my $help = 0;
-
-    GetOptionsFromArray(\@args,
-	       'force|f' => \$force,
-	       'test|dry-run|t' => \$test,
-	       'debug|D' => \$DEBUG,
-	       'help|h' => \$help);
+    my $noext = 0;
+    my $nodir = 0;
+    
+    GetOptionsFromArray(
+	\@args,
+	'force|f' => \$force,
+	'test|dry-run|t|n' => \$test,
+	'no-ext|x' => \$noext,
+	'no-dir|p' => \$nodir,
+	'debug|D+' => \$DEBUG,
+	'help|h' => \$help);
 
     my $exp = shift @args;
 
@@ -69,12 +75,34 @@ EOF
     my %table;
     my %ftable;
 
-    foreach my $from (@args) {
-	$_ = $from;
+    my @ppargs;
+    foreach my $t (@args) {
+	local $_ = $t;
+	my $pre = '';
+	my $post = '';
+
+	if ($nodir and /\//) {
+	    ($pre, $_) = m@\A(.*/)([^/]*)\Z@;
+	    next if $_ eq '';
+	}
+	if ($noext and /\./) {
+	    ($_, $post) = m@\A(.*?)(\.[\w\d---][*[a-zA-Z][\w\d---]*(?:\.(?:gz|bz\d?))?)?\Z@;
+	}
+	die "assert failed" if "$pre$_$post" ne $t;
+	push @ppargs, [$pre, $_, $post];
+	push @cacheargs, $_;
+    }
+
+    foreach my $a (@ppargs) {
+	my ($pre, $post);
+	($pre, $_, $post) = @$a;
+	dsay (2, ":  pre=$pre _=$_ post=$post");
+	my $from = $pre . $_ . $post;
 	eval "use strict; package main; $exp;";
 	die "cannot rename \"$from\": $@" if ($@);
-	my $to = $_;
+	my $to = $pre . $_ . $post;
 	if (($from ne $to) and !$force) {
+	    # caveat: we don't and can't care about TOCTOW: just for accidental overwriting with bad expression.
 	    die "cannot rename \"$from\": target filename \"$to\" already exists.\n" if (-e "$to");
 	    die "cannot rename \"$from\": target filename \"$to\" overwraps with \"$table{$to}\".\n" if (exists $table{$to});
 	}
@@ -101,9 +129,16 @@ EOF
 ## APIs for extension writers
 
 # dsay: show diagnostic message when --debug is given
+#    levels: 1 = user-defined/predefined procedure
+#            2 = MVRE's input processing
+#            3 = MVRE's internal state-keeping
 
 sub dsay (@) {
-    print @_, "\n" if $DEBUG;
+    my $level = 1;
+    if (@_ >= 2 and $_[0] =~ /\A\d+\z/) {
+	$level = 0 + shift @_;
+    }
+    print @_, "\n" if $DEBUG >= ($level || 1);
 }
 
 # def_regexp(name, expr_str)
@@ -170,9 +205,9 @@ sub cache(&) {
     my (@caller0) = caller(0);
     my (@caller1) = caller(1);
     my $key = "$caller1[3]\@$caller0[1]:$caller0[2]";
-    #dsay($key);
+    dsay(3, "cache key = $key");
     if (!defined $cache{$key}) {
-	my @a = map { $_ . "" } @args;
+	my @a = map { $_ . "" } @cacheargs;
 	my @r = &$f(@a);
 	$cache{$key} = \@r;
     }
@@ -228,18 +263,19 @@ sub dsay (@);
 
 MVRE::def_proc *digits, sub {
     my $ndigits = MVRE::cache {
-	local $_;
 	my $n = 1;
 	foreach my $f (@_) {
-	    $f =~ s/(\d+)/$n = length($1) if $n < length($1); $1/ger;
+	    while($f =~ /(\d+)/g) {
+		$n = length($1) if $n < length($1);
+	    }
 	}
 	dsay "digits: number of digits: $n";
 	return $n
     };
-    s/(\d+)/sprintf("%0${ndigits}d", $1)/ge;
+    s/(\d+)/sprintf("%0*d", $ndigits, $1)/ge;
 }, '(make numbers in filenames the same length)';
 
-# experimentally,
+# Experimentally,
 #
 #   sub digits : desc((make numbers in filenames the same length)) {
 #    ...
