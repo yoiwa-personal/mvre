@@ -47,28 +47,7 @@ sub main {
     my $exp = shift @args;
 
     if ($exp eq '' or $help) {
-	print STDERR <<'EOF';
-mvre: move (rename) files regarding to regexp
-
-Usage: mvre [-t] 'expr' files...
-
-       -t --test: not move but only shows the renames
-       -f --force: no check for overwriting
-       -h --help: show this help
-
-       expr is one of:
-              s/from/to/
-              tr/..../..../
-              $_ = ... (evaluated as perl statements, using $_ as (in|out)put)
-              a shortcut keyword
-
-       shortcut keywords:
-EOF
-
-	foreach my $k (sort keys %desc) {
-	    print STDERR "          $k => $desc{$k}\n";
-	}
-	print STDERR "\n";
+	show_help();
 	exit 1;
     }
 
@@ -96,7 +75,7 @@ EOF
     foreach my $a (@ppargs) {
 	my ($pre, $post);
 	($pre, $_, $post) = @$a;
-	dsay (2, ":  pre=$pre _=$_ post=$post");
+	dsay (4, ":  pre=$pre _=$_ post=$post");
 	my $from = $pre . $_ . $post;
 	eval "use strict; package main; $exp;";
 	die "cannot rename \"$from\": $@" if ($@);
@@ -125,13 +104,62 @@ EOF
     }
 }
 
+sub show_help {
+    my $self = $0;
+    my $base = _base_path_fname($self);
+    my $invoke = $self;
+    if (_path_search($base) eq $self) {
+	$invoke = $base;
+    } elsif (-x invoke) {
+	0;
+    } else {
+	$invoke = "perl $self";
+    }
+
+    print STDERR <<"EOF";
+$base: move (rename) files regarding to regexp
+
+Usage: $invoke [options] 'expr' files...
+
+   options:
+       -t --test: not move but only shows the renames
+       -f --force: no check for overwriting
+       -h --help: show this help
+       -x --no-ext: exclude extensions from processing
+       -p --no-dir: exclude path components from processing
+
+   expr is one of:
+          s/from/to/
+          tr/..../..../
+          \$_ = ... (evaluated as perl statements, using \$_ as (in|out)put)
+          a shortcut keyword
+
+   shortcut keywords:
+EOF
+    foreach my $k (sort keys %desc) {
+	print STDERR "      $k => $desc{$k}\n";
+    }
+    print STDERR "\n";
+}
+
+sub _path_search {
+    my $f = $_[0];
+    return $f if $f =~ /\// and -x $f;
+    return (grep { ($_ = "$_/$f"), -x $_ } (split(":", $ENV{PATH})))[0];
+}
+
+sub _base_path_fname {
+    my $f = $_[0];
+    my ($pre, $fname) = $f =~ m@\A(.*/)?([^/]*)\Z@;
+    return $fname;
+}
 
 ## APIs for extension writers
 
 # dsay: show diagnostic message when --debug is given
 #    levels: 1 = user-defined/predefined procedure
-#            2 = MVRE's input processing
-#            3 = MVRE's internal state-keeping
+#            3 = MVRE::cache internal state-keeping
+#            4 = MVRE's input processing or other internal
 
 sub dsay (@) {
     my $level = 1;
@@ -139,6 +167,17 @@ sub dsay (@) {
 	$level = 0 + shift @_;
     }
     print @_, "\n" if $DEBUG >= ($level || 1);
+}
+
+# MVRE::Dumper: auto-loaded Data::Dumper
+
+sub Dumper {
+    dsay 4, "loading Data::Dumper\n";
+    require Data::Dumper;
+    $Data::Dumper::Indent = 0;
+    $Data::Dumper::Terse = 1;
+    *MVRE::Dumper = \&Data::Dumper::Dumper;
+    goto &Data::Dumper::Dumper;
 }
 
 # def_regexp(name, expr_str)
@@ -199,19 +238,21 @@ sub def_proc(*&$) {
 #
 #  see the code for "digits" below for an example.
 
-
 sub cache(&) {
     my ($f) = @_;
     my (@caller0) = caller(0);
     my (@caller1) = caller(1);
     my $key = "$caller1[3]\@$caller0[1]:$caller0[2]";
-    dsay(3, "cache key = $key");
+    my @r;
     if (!defined $cache{$key}) {
 	my @a = map { $_ . "" } @cacheargs;
-	my @r = &$f(@a);
+	@r = &$f(@a);
 	$cache{$key} = \@r;
+	dsay(3, "cache store with key = $key, value = " . Dumper(\@r));
+    } else {
+	@r = @{$cache{$key}};
+    	dsay(3, "cache hit   with key = $key, value = " . Dumper(\@r));
     }
-    my @r = @{$cache{$key}};
     return wantarray ? @r : $r[0];
 }
 
@@ -315,7 +356,7 @@ eval {
 use IPC::Open2;
 eval {
     my $found = 0;
-    my $kakasi_path = (grep { ($_ = "$_/kakasi"), -x $_ } (split(":", $ENV{PATH})))[0];
+    my $kakasi_path = MVRE::_path_search('kakasi');
     unless ($kakasi_path) {
 	die "kakasi not found in \$PATH";
     }
@@ -354,10 +395,175 @@ if ($0 eq __FILE__) {
     1;
 }
 
-# just to use:
-#   invoke as "perl MVRE.pm ...args..."
-#
-# to extend or customize:
-#   use MVRE;
-#   [call any number of MVRE::def_regexp or MVRE::def_proc]
-#   MVRE::main();
+
+=head1 NAME
+
+MVRE - bulk rename files using regular expressions or any Perl syntax.
+
+=head1 SYNOPSIS
+
+  perl MVRE.pm [options] replace-expr files ...
+
+=head1 DESCRIPTION
+
+This program/module renames each files given in the command line,
+according to the expression given in replace-expr.
+
+Replace-expr may one of C<s///> expression, C<tr///> expression,
+pre-defined shortcuts, or any Oerl statements which will update C<$_>.
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<--force, -f>
+
+By default, this module will detect any duplicated target (possibly
+caused by mis-specification of the replace-expr) or already-existing
+files on the target, and aborts the operation if any.  By specifying
+this option, this module will overwrite any existing files as
+specified.
+
+Note that this mechanism is only protection for bad specifications,
+not for any race conditions.
+
+=item B<--test, --dry-run, -n>
+
+Instead of renaming the actual files, it only shows what will happen.
+
+=item B<--no-ext. -x>
+
+Exclude extension parts of the filenames (e.g. C<.txt> or C<.tar.gz>)
+from replacement.  These will be stripped before applying replace-expr
+and restored after that.
+
+Some heuristics are used for determining the extension parts.  Either
+believe it or check it first with C<--dry-run> option.
+
+=item B<--no-dir. -p>
+
+Exclude directory path parts (anything before slash) from replacement.
+These will be stripped Before applying replace-expr and restored after
+that.
+If a filename is ending with a slash, it will be silently skipped.
+
+=back
+
+=head1 APIs
+
+This module can be either used as standalone, or with additional
+pre-defined shortcuts extended by users.
+
+As standalone, it can be used as C<"perl MVRE.pm ....">.
+
+To extend, create a script snippet like below (namely, C<mvre>).
+
+    #!/usr/bin/perl
+    use lib "<path to MVRE.pm>";
+    use MVRE;
+    
+    ..., put additional shortcut definitions here ...
+    
+    MVRE::main();
+ 
+Additional shortcut can be defined using the following APIs.
+
+=head2 MVRE::def_regexp
+
+C<def_regexp> will add a shortcut for simple regular expression
+replacement or similar things.
+
+It will take two string arguments as C<def_regexp("name", 'expr')>.
+The name contains a shortcut name to define, and 'expr' will contain
+an Perl expression for replacements.
+
+For example, if the following is defined,
+
+    MVRE::def_regexp('capital', 's/^(.)/\U$1\E/')
+
+C<mvre capital file1 file2 ...> will translate the every first
+character of each given files to a corresponding capital character.
+
+=head2 MVRE::def_proc
+
+This API is to define more complex operation than above.
+
+It can be used in the following way:
+
+    MVRE::def_proc *name, sub {
+      ... # $_ = ...($_)
+    }, "comment for --help";
+
+The first argument, C<name>, contains a glob for a shortcut name to
+define.
+
+The second argument is a subroutine computing the rename action.  It
+will receive a name of each single file as $_, one by one, and update
+it accordingly.  The value shall by returned to $_, not a return value,
+as similar to C<s///> or C<tr///> operator.
+
+The third argument, a string, will be shown as a description in the
+C<--help> message.
+
+When C<--no-ext> and/or C<--no-dir> are specified,
+only the relevant parts of the filenames will be passed.
+
+=head3 pre-computation and cacheing
+
+In some cases, the shortcut may want to access the whole list of
+the given filenames to determine an action.  For example,
+a predefined shortcut C<digits> will align all occurence of decimal
+numbers in given files, to its longest one.
+
+To support this, C<MVRE::cache> can be called within the user-defined
+subroutine as follows:
+
+    $v = MVRE::cache {
+      ...
+      return ...
+    }
+
+When this function is called for the first time for some defined
+shortcut (more technically precisely, for a specific calling location
+given by C<caller> Perl builtin), the block is called with all of the
+filenames given in the command line passed to C<@_>.
+Options C<--no-ext> and/or C<--no-dir> affects accordingly.
+When the block returns an array or a value, it will be returned from
+C<cache>, too.
+
+If C<MVRE::cache> is called twice or more, it will simply return the
+previous return value, not calling the block again.
+
+See C<digits> defined in MVRE.pm as an example.
+
+=head3 Alternatives to MVRE::def_proc
+
+Alternatively and experimentally, an extension shortcut can also be
+defined using attribute syntax as below:
+
+    sub name : desc(comment for --help) {
+      ...
+    }
+
+Also, if support for C<--help> option is not needed,
+a shortcut can be simply defined by C<sub name { ... }>.
+
+=head1 REFERENCE
+
+L<Homepage|https://www.github.com/yoiwa-personal/>
+
+=head1 AUTHOR/COPYRIGHT
+
+Copyright 2015-2023 Yutaka OIWA <yutaka@oiwa.jp>.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+L<http://www.apache.org/licenses/LICENSE-2.0>
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+=cut
