@@ -81,7 +81,7 @@ sub main {
 	die "cannot rename \"$from\": $@" if ($@);
 	my $to = $pre . $_ . $post;
 	if (($from ne $to) and !$force) {
-	    # caveat: we don't and can't care about TOCTOW: just for accidental overwriting with bad expression.
+	    # Here we just check for accidental overwriting with bad expression.
 	    die "cannot rename \"$from\": target filename \"$to\" already exists.\n" if (-e "$to");
 	    die "cannot rename \"$from\": target filename \"$to\" overwraps with \"$table{$to}\".\n" if (exists $table{$to});
 	}
@@ -89,13 +89,18 @@ sub main {
 	$ftable{$from} = $to;
     }
 
+    my $rename_func = $force ? \&CORE::rename : \&RenameNoReplace::rename_noreplace;
+    # On Linux (not too old ones), overwriting existing files will be
+    # prevented using the dedicated system call.
+    # It is impossible with pure POSIX system APIs.
+
     foreach my $from (@args) {
 	$_ = $from;
 	my $to = $ftable{$from};
 	unless ($from eq $to) {
 	    unless ($test) {
-		unless (rename($from, $to)) {
-		    print STDERR "\Q$from\E -> \Q$to\E: $!.\n";
+		unless (&$rename_func($from, $to)) {
+		    print STDERR "\Q$from\E -> \Q$to\E: failed: $!.\n";
 		    exit 1;
 		}
 	    }
@@ -140,6 +145,9 @@ EOF
 	print STDERR "      $k => $desc{$k}\n";
     }
     print STDERR "\n";
+    if ($DEBUG >= 2) {
+	print STDERR "    Support for No-replace rename: " , ($RenameNoReplace::rename_noreplace_supported || "(none)"), "\n";
+    }
 }
 
 sub _path_search {
@@ -154,9 +162,41 @@ sub _base_path_fname {
     return $fname;
 }
 
+package RenameNoReplace;
+# atomic system call for no-replace rename.
+
+sub rename_noreplace ($$);
+
+BEGIN {
+    our $rename_noreplace_supported = undef;
+
+    if ($^O eq 'linux') {
+	eval {
+	    require 'syscall.ph';
+	    require POSIX;
+	    my $SYS_renameat2 = &SYS_renameat2(); # check for existence
+	    my $AT_FDCWD = -100;      # linux specific value
+	    my $RENAME_NOREPLACE = 1; # linux specific value
+
+	    sub rename_noreplace ($$) {
+		my ($from, $to) = @_;
+		$from = $from . "";
+		$to = $to . "";
+		my $r = syscall($SYS_renameat2, $AT_FDCWD, $from, $AT_FDCWD, $to, $RENAME_NOREPLACE);
+		return $r == 0;
+	    }
+	    $rename_noreplace_supported = "linux($SYS_renameat2)";
+	};
+	*rename_noreplace = \&CORE::rename unless $rename_noreplace_supported;
+    }
+    # TODO: BSD/MacOS (renameatx_np), Windows (MoveFileEx)
+}
+
 ## APIs for extension writers
 
 # dsay: show diagnostic message when --debug is given
+
+package MVRE;
 
 sub dsay (@) {
     my $level = 1;
