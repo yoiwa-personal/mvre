@@ -157,22 +157,31 @@ sub _base_path_fname {
 ## APIs for extension writers
 
 # dsay: show diagnostic message when --debug is given
-#    levels: 1 = user-defined/predefined procedure
-#            3 = MVRE::cache internal state-keeping
-#            4 = MVRE's input processing or other internal
 
 sub dsay (@) {
     my $level = 1;
     if (@_ >= 2 and $_[0] =~ /\A\d+\z/) {
 	$level = 0 + shift @_;
     }
-    print @_, "\n" if $DEBUG >= ($level || 1);
+    if ($DEBUG >= ($level || 1)) {
+	if (ref($_[0]) eq 'CODE') {
+	    @_ = &{$_[0]};
+	}
+	print STDERR join(" ", @_), "\n"
+    }
 }
+
+# "undocumented" features:
+# - first argument can be an integer for the debug messsage level
+#    levels: 1 = user-defined/predefined procedure
+#            3 = MVRE::cache internal state-keeping
+#            4 = MVRE's input processing or other internal
+# - message can be a code reference, which will be called only when needed.
 
 # MVRE::Dumper: auto-loaded Data::Dumper
 
 sub Dumper {
-    dsay 4, "loading Data::Dumper\n";
+    dsay 4, "loading Data::Dumper";
     require Data::Dumper;
     $Data::Dumper::Indent = 0;
     $Data::Dumper::Terse = 1;
@@ -248,10 +257,10 @@ sub cache(&) {
 	my @a = map { $_ . "" } @cacheargs;
 	@r = &$f(@a);
 	$cache{$key} = \@r;
-	dsay(3, "cache store with key = $key, value = " . Dumper(\@r));
+	dsay(3, sub {"cache store with key = $key, value = " . Dumper(\@r)});
     } else {
 	@r = @{$cache{$key}};
-    	dsay(3, "cache hit   with key = $key, value = " . Dumper(\@r));
+    	dsay(3, sub {"cache hit   with key = $key, value = " . Dumper(\@r)});
     }
     return wantarray ? @r : $r[0];
 }
