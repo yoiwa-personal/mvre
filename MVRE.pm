@@ -10,7 +10,7 @@ use strict;
 package MVRE;
 
 use Getopt::Long 'GetOptionsFromArray';
-Getopt::Long::Configure qw/bundling/;
+Getopt::Long::Configure qw/bundling require_order/;
 
 BEGIN {
     eval { require Sub::Util; };
@@ -34,7 +34,7 @@ sub main {
     my $help = 0;
     my $noext = 0;
     my $nodir = 0;
-    
+
     GetOptionsFromArray(
 	\@args,
 	'force|f' => \$force,
@@ -80,6 +80,7 @@ sub main {
 	eval "use strict; package main; $exp;";
 	die "cannot rename \"$from\": $@" if ($@);
 	my $to = $pre . $_ . $post;
+	die "cannot rename \"$from\" to \"$to\": file missing\n" unless (-e "$from");
 	if (($from ne $to) and !$force) {
 	    # Here we just check for accidental overwriting with bad expression.
 	    die "cannot rename \"$from\": target filename \"$to\" already exists.\n" if (-e "$to");
@@ -100,7 +101,7 @@ sub main {
 	unless ($from eq $to) {
 	    unless ($test) {
 		unless (&$rename_func($from, $to)) {
-		    print STDERR "\Q$from\E -> \Q$to\E: failed: $!.\n";
+		    print STDERR "\Q$from\E -> \Q$to\E: rename failed: $!.\n";
 		    exit 1;
 		}
 	    }
@@ -169,6 +170,7 @@ sub rename_noreplace ($$);
 
 BEGIN {
     our $rename_noreplace_supported = undef;
+    *rename_noreplace = \&CORE::rename;
 
     if ($^O eq 'linux') {
 	eval {
@@ -178,16 +180,16 @@ BEGIN {
 	    my $AT_FDCWD = -100;      # linux specific value
 	    my $RENAME_NOREPLACE = 1; # linux specific value
 
-	    sub rename_noreplace ($$) {
+	    sub _rename_noreplace_linux ($$) {
 		my ($from, $to) = @_;
 		$from = $from . "";
 		$to = $to . "";
 		my $r = syscall($SYS_renameat2, $AT_FDCWD, $from, $AT_FDCWD, $to, $RENAME_NOREPLACE);
 		return $r == 0;
 	    }
+	    *rename_noreplace = \&_rename_noreplace_linux;
 	    $rename_noreplace_supported = "linux($SYS_renameat2)";
 	};
-	*rename_noreplace = \&CORE::rename unless $rename_noreplace_supported;
     }
     # TODO: BSD/MacOS (renameatx_np), Windows (MoveFileEx)
 }
