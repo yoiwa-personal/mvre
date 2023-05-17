@@ -190,8 +190,19 @@ BEGIN {
 	    *rename_noreplace = \&_rename_noreplace_linux;
 	    $rename_noreplace_supported = "linux($SYS_renameat2)";
 	};
+    } elsif ($^O eq 'MSWin32') {
+	eval {
+	    # not tested
+	    require Win32API::File;
+	    sub _rename_noreplace_win32 ($$) {
+		my ($from, $to) = @_;
+	        return Win32API::File::MoveFileEx($from, $to, Win32API::File::MOVEFILE_REPLACE_EXISTING());
+	    }
+	    *rename_noreplace = \&_rename_noreplace_win32;
+	    $rename_noreplace_supported = "Win32API::File";
+	};
     }
-    # TODO: BSD/MacOS (renameatx_np), Windows (MoveFileEx)
+    # TODO: BSD/MacOS (renameatx_np)
 }
 
 ## APIs for extension writers
