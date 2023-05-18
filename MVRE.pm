@@ -65,7 +65,7 @@ sub main {
 	    next if $_ eq '';
 	}
 	if ($noext and /\./) {
-	    ($_, $post) = m@\A(.*?)(\.[\w\d---][*[a-zA-Z][\w\d---]*(?:\.(?:gz|bz\d?))?)?\Z@;
+	    ($_, $post) = m@\A(.*?)((?:\.[\-\w\d]*[a-zA-Z][\-\w\d]*(?:\.(?:gz|bz\d?))?)?(?:,v)?)\Z@;
 	}
 	die "assert failed" if "$pre$_$post" ne $t;
 	push @ppargs, [$pre, $_, $post];
@@ -80,11 +80,13 @@ sub main {
 	eval "use strict; package main; $exp;";
 	die "cannot rename \"$from\": $@" if ($@);
 	my $to = $pre . $_ . $post;
-	die "cannot rename \"$from\" to \"$to\": file missing\n" unless (-e "$from");
-	if (($from ne $to) and !$force) {
-	    # Here we just check for accidental overwriting with bad expression.
-	    die "cannot rename \"$from\": target filename \"$to\" already exists.\n" if (-e "$to");
-	    die "cannot rename \"$from\": target filename \"$to\" overwraps with \"$table{$to}\".\n" if (exists $table{$to});
+	if (!$force) {
+	    die "cannot rename \"$from\" to \"$to\": file missing\n" unless (-e "$from");
+	    if ($from ne $to) {
+		# Here we just check for accidental overwriting with bad expression.
+		die "cannot rename \"$from\": target filename \"$to\" already exists.\n" if (-e "$to");
+		die "cannot rename \"$from\": target filename \"$to\" overwraps with \"$table{$to}\".\n" if (exists $table{$to});
+	    }
 	}
 	$table{$to} = $from;
 	$ftable{$from} = $to;
@@ -116,7 +118,7 @@ sub show_help {
     my $invoke = $self;
     if (_path_search($base) eq $self) {
 	$invoke = $base;
-    } elsif (-x invoke) {
+    } elsif (-x $invoke) {
 	0;
     } else {
 	$invoke = "perl $self";
@@ -170,7 +172,6 @@ sub rename_noreplace ($$);
 
 BEGIN {
     our $rename_noreplace_supported = undef;
-    *rename_noreplace = \&CORE::rename;
 
     if ($^O eq 'linux') {
 	eval {
@@ -203,6 +204,7 @@ BEGIN {
 	};
     }
     # TODO: BSD/MacOS (renameatx_np)
+    *rename_noreplace = \&CORE::rename unless defined $rename_noreplace_supported;
 }
 
 ## APIs for extension writers
@@ -236,6 +238,7 @@ sub dsay (@) {
 sub Dumper {
     dsay 4, "loading Data::Dumper";
     require Data::Dumper;
+    no warnings 'once';
     $Data::Dumper::Indent = 0;
     $Data::Dumper::Terse = 1;
     *MVRE::Dumper = \&Data::Dumper::Dumper;
@@ -270,7 +273,7 @@ sub def_regexp($$) {
 #     ...
 #   }
 # will work.  also, as an experimental support,
-#   sub digits : desc(comment) {
+#   sub digits : Desc(comment) {
 #     ...
 #   }
 # will also work.
@@ -324,7 +327,7 @@ sub main_MODIFY_CODE_ATTRIBUTES($$@) {
     my ($pkg, $ref, @attrs) = @_;
     my @result = ();
     foreach my $a (@attrs) {
-	if ($a =~ /\Adesc\((.+)\)\Z/) {
+	if ($a =~ /\ADesc\((.+)\)\Z/) {
 	    my @subname = split("::", Sub::Util::subname($ref));
 	    $desc{$subname[-1]} = $1;
 	} else {
@@ -341,11 +344,11 @@ BEGIN { *main::MODIFY_CODE_ATTRIBUTES = \&main_MODIFY_CODE_ATTRIBUTES; }
     my %keys = (
 	'lower', 'tr/A-Z/a-z/',
 	'upper', 'tr/a-z/A-Z/',
-	'nospecial', 's/[^\w\d-_.\/]+/_/g',
-	'nospecial_euc', 's/[^\w\d-_.\/\221-\376]+/_/g',
-	'nospecial_utf', 's/[^\w\d-_.\/\200-\376]+/_/g',
-	'urlencode', 's/([^\w\d-_.\/])/sprintf("%%%02X",ord $1)/ge',
-	'urlencodeP', 's/([^\w\d-_.\/%])/sprintf("%%%02X",ord $1)/ge',
+	'nospecial', 's/[^\w\d\-_.\/]+/_/g',
+	'nospecial_euc', 's/[^\w\d\-_.\/\221-\376]+/_/g',
+	'nospecial_utf', 's/[^\w\d\-_.\/\200-\376]+/_/g',
+	'urlencode', 's/([^\w\d\-_.\/])/sprintf("%%%02X",ord $1)/ge',
+	'urlencodeP', 's/([^\w\d\-_.\/%])/sprintf("%%%02X",ord $1)/ge',
        );
 
     foreach my $k (keys %keys) {
@@ -380,7 +383,7 @@ MVRE::def_proc *digits, sub {
 
 # Experimentally,
 #
-#   sub digits : desc((make numbers in filenames the same length)) {
+#   sub digits : Desc((make numbers in filenames the same length)) {
 #    ...
 #   }
 #
@@ -390,27 +393,24 @@ MVRE::def_proc *digits, sub {
 
 eval {
     eval "use NKF"; die if $@;
-    sub mime_decode {
+    MVRE::def_proc *mime_decode, sub {
 	s/\=[\_?X]ISO-2022-JP[\_?X]B[\_?X]([0-9A-Za-z\/+]+)=*([\_?X]=)?/nkf('-mB','-Jw',"$1")/egi;
 	#nkf('-Mb -e',$1)/eg;
-    }
-    $MVRE::key{'mime_decode'} = '(decode MIME B encoding)';
+    }, '(decode MIME B encoding)';
 };
 
 eval {
     eval "use NKF"; die if $@;
-    sub utf {
+    MVRE::def_proc *utf, sub {
 	$_ = NKF::nkf('-w',$_);
-    }
-    $MVRE::key{'utf'} = '(convert to UTF-8)';
+    }, '(convert to UTF-8)';
 };
 
 eval {
     eval "use Jcode"; die if $@;
-    sub utf {
+    MVRE::def_proc *utf, sub {
 	$_ = Jcode->new($_)->utf8;
-    }
-    $MVRE::key{'utf'} = '(convert to UTF-8 using Jcode.pm)';
+    }, '(convert to UTF-8 using Jcode.pm)';
 };
 
 # Japanese to Latin romanization
@@ -456,6 +456,8 @@ if ($0 eq __FILE__) {
 } else {
     1;
 }
+
+(*nkf, *digits, *kakasi, *mime_decode) if 0; # no warnings 'once';
 
 
 =head1 NAME
@@ -603,7 +605,7 @@ See C<digits> defined in MVRE.pm as an example.
 Alternatively and experimentally, an extension shortcut can also be
 defined using attribute syntax as below:
 
-    sub name : desc(comment for --help) {
+    sub name : Desc(comment for --help) {
       ...
     }
 
