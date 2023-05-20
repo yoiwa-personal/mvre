@@ -19,7 +19,7 @@ BEGIN {
 
 our %desc;
 BEGIN { %desc = (); }
-our %cache = 0;
+our %cache = ();
 
 our @cacheargs; # shared with main and cache
 our $DEBUG = 0;
@@ -30,6 +30,7 @@ sub main {
     my @args = @main::ARGV;
 
     my $force = 0;
+    my $debug_no_precheck = 0;
     my $test = 0;
     my $help = 0;
     my $noext = 0;
@@ -42,6 +43,7 @@ sub main {
 	'no-ext|x' => \$noext,
 	'no-dir|p' => \$nodir,
 	'debug|D+' => \$DEBUG,
+	'debug-noprecheck' => \$debug_no_precheck, # -f only for preparation-phase
 	'help|h' => \$help);
 
     my $exp = shift @args;
@@ -80,7 +82,7 @@ sub main {
 	eval "use strict; package main; $exp;";
 	die "cannot rename \"$from\": $@" if ($@);
 	my $to = $pre . $_ . $post;
-	if (!$force) {
+	if (!$force && !$debug_no_precheck) {
 	    die "cannot rename \"$from\" to \"$to\": file missing\n" unless (-e "$from");
 	    if ($from ne $to) {
 		# Here we just check for accidental overwriting with bad expression.
@@ -282,6 +284,7 @@ sub def_proc(*&$) {
     my ($a, $proc, $help) = @_;
     my $name = *$a{NAME};
     my $package = *$a{PACKAGE};
+    no warnings 'redefine';
     *$a = Sub::Util::set_subname("${package}::${name}", $proc);
     $desc{$name} = $help;
 }
