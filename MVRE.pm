@@ -451,6 +451,8 @@ eval {
     }, '(tries to translate Japanese to Ro-maji) (using library)';
 };
 
+(*nkf, *digits, *kakasi, *mime_decode) if 0; # no warnings 'once';
+
 ## bootstrap
 
 if ($0 eq __FILE__) {
@@ -459,9 +461,6 @@ if ($0 eq __FILE__) {
 } else {
     1;
 }
-
-(*nkf, *digits, *kakasi, *mime_decode) if 0; # no warnings 'once';
-
 
 =head1 NAME
 
