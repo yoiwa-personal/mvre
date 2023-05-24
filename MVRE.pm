@@ -26,6 +26,13 @@ our $DEBUG = 0;
 
 ## the main processing
 
+sub _make_sub {
+    # as less lexical variables as possible
+    local $_ = eval "use strict; package main; sub { { $_[0] ;} return \$_ };";
+    die "syntax error on given expression: $@" if $@;
+    return $_;
+}
+
 sub main {
     my @args = @main::ARGV;
 
@@ -74,12 +81,14 @@ sub main {
 	push @cacheargs, $_;
     }
 
+    my $sub = _make_sub($exp);
+
     foreach my $a (@ppargs) {
 	my ($pre, $post);
 	($pre, $_, $post) = @$a;
 	dsay (4, ":  pre=$pre _=$_ post=$post");
 	my $from = $pre . $_ . $post;
-	eval "use strict; package main; $exp;";
+	$_ = eval { &$sub };
 	die "cannot rename \"$from\": $@" if ($@);
 	my $to = $pre . $_ . $post;
 	if (!$force && !$debug_no_precheck) {
