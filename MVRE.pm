@@ -7,7 +7,7 @@ use 5.016;
 
 use strict;
 
-package MVRE;
+package MVRE v1.0.0;
 
 use Getopt::Long 'GetOptionsFromArray';
 Getopt::Long::Configure qw/bundling require_order/;
@@ -63,11 +63,11 @@ sub main {
 	my $post = '';
 
 	if ($nodir and /\//) {
-	    ($pre, $_) = m@\A(.*/)([^/]*)\Z@;
+	    ($pre, $_) = m@\A(.*/)([^/]*)\Z@sa;
 	    next if $_ eq '';
 	}
 	if ($noext and /\./) {
-	    ($_, $post) = m@\A(.*?)((?:\.[\-\w\d]*[a-zA-Z][\-\w\d]*(?:\.(?:gz|bz\d?))?)?(?:,v)?)\Z@;
+	    ($_, $post) = m@\A(.*?)((?:\.[\-\w\d]*[a-zA-Z][\-\w\d]*(?:\.(?:gz|bz\d?))?)?(?:,v)?)\Z@sa;
 	}
 	die "assert failed" if "$pre$_$post" ne $t;
 	push @ppargs, [$pre, $_, $post];
@@ -237,14 +237,17 @@ sub dsay (@) {
 
 # MVRE::Dumper: auto-loaded Data::Dumper
 
+our $_Dumper;
+
 sub Dumper {
-    dsay 4, "loading Data::Dumper";
-    require Data::Dumper;
-    no warnings 'once';
-    $Data::Dumper::Indent = 0;
-    $Data::Dumper::Terse = 1;
-    *MVRE::Dumper = \&Data::Dumper::Dumper;
-    goto &Data::Dumper::Dumper;
+    unless ($_Dumper) {
+	dsay 4, "loading Data::Dumper";
+	require Data::Dumper;
+	$_Dumper = Data::Dumper->new([0]);
+	$_Dumper->Terse(1);
+	$_Dumper->Indent(0);
+    }
+    $_Dumper->Reset()->Values($_[0])->Dump();
 }
 
 # def_regexp(name, expr_str)
@@ -310,16 +313,16 @@ sub cache(&) {
     my ($f) = @_;
     my (@caller0) = caller(0);
     my (@caller1) = caller(1);
-    my $key = "$caller1[3]\@$caller0[1]:$caller0[2]";
+    my $key = "$caller1[3]\@$caller0[1]:$caller0[2]=($f)";
     my @r;
     if (!defined $cache{$key}) {
 	my @a = map { $_ . "" } @cacheargs;
 	@r = &$f(@a);
 	$cache{$key} = \@r;
-	dsay(3, sub {"cache store with key = $key, value = " . Dumper(\@r)});
+	dsay(3, sub {"cache store with key = $key, value = " . Dumper([\@r])});
     } else {
 	@r = @{$cache{$key}};
-    	dsay(3, sub {"cache hit   with key = $key, value = " . Dumper(\@r)});
+    	dsay(3, sub {"cache hit   with key = $key, value = " . Dumper([\@r])});
     }
     return wantarray ? @r : $r[0];
 }
@@ -347,11 +350,11 @@ BEGIN { *main::MODIFY_CODE_ATTRIBUTES = \&main_MODIFY_CODE_ATTRIBUTES; }
     my %keys = (
 	'lower', 'tr/A-Z/a-z/',
 	'upper', 'tr/a-z/A-Z/',
-	'nospecial', 's/[^\w\d\-_.\/]+/_/g',
-	'nospecial_euc', 's/[^\w\d\-_.\/\221-\376]+/_/g',
-	'nospecial_utf', 's/[^\w\d\-_.\/\200-\376]+/_/g',
-	'urlencode', 's/([^\w\d\-_.\/])/sprintf("%%%02X",ord $1)/ge',
-	'urlencodeP', 's/([^\w\d\-_.\/%])/sprintf("%%%02X",ord $1)/ge',
+	'nospecial', 's/[^\w\d\-_.\/]+/_/ga',
+	'nospecial_euc', 's/[^\w\d\-_.\/\221-\376]+/_/ga',
+	'nospecial_utf', 's/[^\w\d\-_.\/\200-\376]+/_/ga',
+	'urlencode', 's/([^\w\d\-_.\/])/sprintf("%%%02X",ord $1)/gea',
+	'urlencodeP', 's/([^\w\d\-_.\/%])/sprintf("%%%02X",ord $1)/gea',
        );
 
     foreach my $k (keys %keys) {
