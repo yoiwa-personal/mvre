@@ -24,14 +24,14 @@ our %cache = ();
 our @cacheargs; # shared with main and cache
 our $DEBUG = 0;
 
-## the main processing
-
 sub _make_sub {
     # as less lexical variables as possible
     local $_ = eval "use strict; package main; sub { { $_[0] ;} return \$_ };";
     die "syntax error on given expression: $@" if $@;
     return $_;
 }
+
+## the main processing
 
 sub main {
     my @args = @main::ARGV;
@@ -88,7 +88,7 @@ sub main {
 	($pre, $_, $post) = @$a;
 	dsay (4, ":  pre=$pre _=$_ post=$post");
 	my $from = $pre . $_ . $post;
-	$_ = eval { &$sub };
+	$_ = eval { &$sub($_) };
 	die "cannot rename \"$from\": $@" if ($@);
 	my $to = $pre . $_ . $post;
 	if (!$force && !$debug_no_precheck) {
@@ -301,7 +301,7 @@ sub def_proc(*&$) {
     $desc{$name} = $help;
 }
 
-# ** cache(proc)
+# cache(proc)
 #
 #  usage: $v (or @v) = cache { ...code... }
 #
@@ -644,4 +644,16 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+=begin comment
+
+=head1 Undocumented, experimental features
+
+ - an replacement expression can return value, instead of updating $_.
+   For example, 'return uc' works.
+ - --debug-noprecheck; it will not check files for overwrite, but
+   use no-replace type of system calls for actual operation if available.
+
+=end comment
+
 =cut
