@@ -7,7 +7,20 @@ use 5.016;
 
 use strict;
 
-package MVRE v1.0.0;
+package MVRE v1.0.1;
+
+use Exporter qw(import);
+
+our @EXPORT = qw(dsay MODIFY_CODE_ATTRIBUTES);
+our @EXPORT_OK = qw(def_proc def_regexp cache Dumper);
+our %EXPORT_TAGS =
+  (
+   all => [],
+   apis => [qw(def_proc def_regexp cache dsay MODIFY_CODE_ATTRIBUTES)],
+   minimal_apis => [qw(dsay MODIFY_CODE_ATTRIBUTES)],
+   shortcuts => [],
+  );
+# predefined shortcuts are added later
 
 use Getopt::Long 'GetOptionsFromArray';
 Getopt::Long::Configure qw/bundling require_order/;
@@ -103,7 +116,7 @@ sub main {
 	$ftable{$from} = $to;
     }
 
-    my $rename_func = $force ? \&CORE::rename : \&RenameNoReplace::rename_noreplace;
+    my $rename_func = $force ? \&CORE::rename : \&MVRE::RenameNoReplace::rename_noreplace;
     # On Linux (not too old ones), overwriting existing files will be
     # prevented using the dedicated system call.
     # It is impossible with pure POSIX system APIs.
@@ -129,7 +142,7 @@ sub show_help {
     my $self = $0;
     my $base = _base_path_fname($self);
     my $invoke = $self;
-    if (_path_search($base) eq $self) {
+    if ((_path_search($base) // "") eq $self) {
 	$invoke = $base;
     } elsif (-x $invoke) {
 	0;
@@ -162,7 +175,7 @@ EOF
     }
     print STDERR "\n";
     if ($DEBUG >= 2) {
-	print STDERR "    Support for No-replace rename: " , ($RenameNoReplace::rename_noreplace_supported || "(none)"), "\n";
+	print STDERR "    Support for No-replace rename: " , ($MVRE::RenameNoReplace::rename_noreplace_supported || "(none)"), "\n";
     }
 }
 
@@ -178,7 +191,7 @@ sub _base_path_fname {
     return $fname;
 }
 
-package RenameNoReplace;
+package MVRE::RenameNoReplace;
 # atomic system call for no-replace rename.
 
 sub rename_noreplace ($$);
@@ -231,7 +244,7 @@ sub dsay (@) {
     if (@_ >= 2 and $_[0] =~ /\A\d+\z/) {
 	$level = 0 + shift @_;
     }
-    if ($DEBUG >= ($level || 1)) {
+    if ($DEBUG >= ($level // 1)) {
 	if (ref($_[0]) eq 'CODE') {
 	    @_ = &{$_[0]};
 	}
@@ -266,7 +279,7 @@ sub Dumper {
 
 sub def_regexp($$) {
     my ($k, $r) = @_;
-    eval "package main; sub $k { $r }";
+    eval "sub $k { $r }";
     die "while defining $k: $@" if $@;
     $desc{$k} = "$r";
 }
@@ -340,7 +353,7 @@ sub cache(&) {
 
 # experimental support for attributes;
 
-sub main_MODIFY_CODE_ATTRIBUTES($$@) {
+sub MODIFY_CODE_ATTRIBUTES($$@) {
     my ($pkg, $ref, @attrs) = @_;
     my @result = ();
     foreach my $a (@attrs) {
@@ -353,8 +366,6 @@ sub main_MODIFY_CODE_ATTRIBUTES($$@) {
     }
     return @result;
 }
-
-BEGIN { *main::MODIFY_CODE_ATTRIBUTES = \&main_MODIFY_CODE_ATTRIBUTES; }
 
 # predefined regular expressions
 {
@@ -372,11 +383,6 @@ BEGIN { *main::MODIFY_CODE_ATTRIBUTES = \&main_MODIFY_CODE_ATTRIBUTES; }
 	def_regexp($k, $keys{$k});
     }
 }
-
-package main;
-
-sub dsay (@);
-*dsay = \&MVRE::dsay;
 
 ## default and example definitions
 
@@ -467,10 +473,20 @@ eval {
 
 (*nkf, *digits, *kakasi, *mime_decode) if 0; # no warnings 'once';
 
+{
+    my @sc = sort keys %MVRE::desc;
+    push @EXPORT, @sc;
+    push @{$EXPORT_TAGS{all}}, @sc;
+    push @{$EXPORT_TAGS{shortcuts}}, @sc;
+    push @{$EXPORT_TAGS{all}}, @{$EXPORT_TAGS{apis}};
+}
+
 ## bootstrap
 
 if ($0 eq __FILE__) {
-    MVRE::main();
+    package main;
+    MVRE->import(":DEFAULT");
+    MVRE->main();
     0;
 } else {
     1;
