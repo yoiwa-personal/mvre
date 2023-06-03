@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 ################################################################
-# MVRE: bulk rename files using regular expresson or any Perl syntax.
+# MVRE: bulk rename files using regular expression or any Perl statements.
 ################################################################
 
 use 5.016;
@@ -113,9 +113,11 @@ sub main {
 	my $to = $ftable{$from};
 	unless ($from eq $to) {
 	    unless ($test) {
+		if (!$force && !$debug_no_precheck) {
+		    die "cannot rename \"$from\" to \"$to\": file missing\n" unless (-e "$from");
+		}
 		unless (&$rename_func($from, $to)) {
-		    print STDERR "\Q$from\E -> \Q$to\E: rename failed: $!.\n";
-		    exit 1;
+		    die "\Q$from\E -> \Q$to\E: rename failed: $!.\n";
 		}
 	    }
 	    print "$from -> $to\n";
@@ -269,7 +271,7 @@ sub def_regexp($$) {
     $desc{$k} = "$r";
 }
 
-# ** def_proc(glob, sub, comment)
+# def_proc(glob, sub, comment)
 
 # use as:
 #   def_proc *name, sub {
