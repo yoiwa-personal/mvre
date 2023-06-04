@@ -434,38 +434,42 @@ eval {
 
 # Japanese to Latin romanization
 
-use IPC::Open2;
-eval {
-    my $found = 0;
-    my $kakasi_path = MVRE::_path_search('kakasi');
-    unless ($kakasi_path) {
-	die "kakasi not found in \$PATH";
-    }
+{
+    my $kakasi_defined = 0;
+    eval {
+	eval "use Text::Kakasi ()"; die if $@;
+	MVRE::def_proc *kakasi, sub {
+	    my $kakasi = MVRE::cache {
+		Text::Kakasi->new('kakasi', '-Ha', '-Ka', '-Ja', '-Ea', '-ka', '-iutf8', '-outf8');
+	    };
+	    $_ = $kakasi->get($_);
+	}, '(tries to translate Japanese to Ro-maji) (using library)';
+	$kakasi_defined = 1;
+    };
+    last if $kakasi_defined;
 
-    MVRE::def_proc *kakasi, sub {
-        my ($rd,$wr);
-        my $pid = open2($rd, $wr, $kakasi_path, '-Ha', '-Ka', '-Ja', '-Ea', '-ka', '-iutf8', '-outf8');
-        print $wr "$_\n";
-        close $wr;
-        $_ = readline $rd;
-        close $rd;
-        waitpid $pid, 0;
-        chomp $_;
-        die "kakasi failed" if $_ eq '';
-        return $_;
-    }, "(tries to translate Japanese to Ro-maji) (using $kakasi_path)";
-};
+    eval {
+	my $found = 0;
+	my $kakasi_path = MVRE::_path_search('kakasi');
+	unless ($kakasi_path) {
+	    die "kakasi not found in \$PATH";
+	}
+	require IPC::Open2;
 
-eval {
-    eval "use Text::Kakasi"; die if $@;
-    my $kakasi_module_inited = '';
-    MVRE::def_proc *kakasi, sub {
-	my $kakasi = MVRE::cache {
-	    Text::Kakasi->new('kakasi', '-Ha', '-Ka', '-Ja', '-Ea', '-ka', '-iutf8', '-outf8');
-	};
-	$_ = $kakasi->get($_);
-    }, '(tries to translate Japanese to Ro-maji) (using library)';
-};
+	MVRE::def_proc *kakasi, sub {
+	    my ($rd,$wr);
+	    my $pid = IPC::Open2::open2($rd, $wr, $kakasi_path, '-Ha', '-Ka', '-Ja', '-Ea', '-ka', '-iutf8', '-outf8');
+	    print $wr "$_\n";
+	    close $wr;
+	    $_ = readline $rd;
+	    close $rd;
+	    waitpid $pid, 0;
+	    chomp $_;
+	    die "kakasi failed" if $_ eq '';
+	    return $_;
+	}, "(tries to translate Japanese to Ro-maji) (using $kakasi_path)";
+    };
+}
 
 (*nkf, *digits, *kakasi, *mime_decode) if 0; # no warnings 'once';
 
