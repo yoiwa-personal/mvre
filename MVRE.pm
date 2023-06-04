@@ -9,6 +9,14 @@ use strict;
 
 package MVRE v1.0.1;
 
+sub _make_sub {
+    # as less lexical variables as possible; before all our and my
+
+    local $_ = eval "use strict; package main; sub { { $_[0] ;} return \$_ };";
+    die "syntax error on given expression: $@" if $@;
+    return $_;
+}
+
 use Exporter qw(import);
 
 our @EXPORT = qw(dsay MODIFY_CODE_ATTRIBUTES);
@@ -36,13 +44,6 @@ our %cache = ();
 
 our @cacheargs; # shared with main and cache
 our $DEBUG = 0;
-
-sub _make_sub {
-    # as less lexical variables as possible
-    local $_ = eval "use strict; package main; sub { { $_[0] ;} return \$_ };";
-    die "syntax error on given expression: $@" if $@;
-    return $_;
-}
 
 ## the main processing
 
@@ -127,9 +128,9 @@ sub main {
     my %table;
     my %ftable;
 
-    my @pargs = compute_replace($exp, \@args, noext => $noext, nodir => $nodir);
-
     *error_func = $test ? \&CORE::warn : \&CORE::die;
+
+    my @pargs = compute_replace($exp, \@args, noext => $noext, nodir => $nodir);
 
     # duplicate check
     foreach my $a (@pargs) {
