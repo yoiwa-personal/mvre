@@ -415,25 +415,21 @@ MVRE::def_proc *digits, sub {
 # Japanese code conversions
 
 eval {
-    eval "use NKF"; die if $@;
+    use Encode::Guess;
+    MVRE::def_proc *utf, sub {
+	my $enc = guess_encoding($_, qw/euc-jp shiftjis utf8 7bit-jis/);
+	if ($enc) {
+	    $_ = $enc->decode($_);
+	}
+    }, '(convert to UTF-8 using Encode::Guess)';
+};
+
+eval {
+    eval "use NKF ()"; die if $@;
     MVRE::def_proc *mime_decode, sub {
-	s/\=[\_?X]ISO-2022-JP[\_?X]B[\_?X]([0-9A-Za-z\/+]+)=*([\_?X]=)?/nkf('-mB','-Jw',"$1")/egi;
+	s/\=[\_?X]ISO-2022-JP[\_?X]B[\_?X]([0-9A-Za-z\/+]+)=*([\_?X]=)?/NKF::nkf('-mB','-Jw',"$1")/egi;
 	#nkf('-Mb -e',$1)/eg;
     }, '(decode MIME B encoding)';
-};
-
-eval {
-    eval "use NKF"; die if $@;
-    MVRE::def_proc *utf, sub {
-	$_ = NKF::nkf('-w',$_);
-    }, '(convert to UTF-8)';
-};
-
-eval {
-    eval "use Jcode"; die if $@;
-    MVRE::def_proc *utf, sub {
-	$_ = Jcode->new($_)->utf8;
-    }, '(convert to UTF-8 using Jcode.pm)';
 };
 
 # Japanese to Latin romanization
