@@ -46,6 +46,57 @@ sub _make_sub {
 
 ## the main processing
 
+sub error_func (@);
+
+sub compute_replace($$%) {
+    my ($exp, $args, %opts) = @_;
+    my @args = @$args;
+    my @ppargs = ();
+    die "compute_replace: bad argument" unless (exists $opts{noext} && exists $opts{nodir});
+    my $noext = $opts{noext};
+    my $nodir = $opts{nodir};
+    my @ret = ();
+
+    my $sub = _make_sub($exp);
+
+    foreach my $t (@args) {
+	local $_ = $t;
+	my $pre = '';
+	my $post = '';
+
+	if ($nodir and /\//) {
+	    ($pre, $_) = m@\A(.*/)([^/]*)\Z@sa;
+	    next if $_ eq '';
+	}
+	if ($noext and /\./) {
+	    ($_, $post) = m@\A(.*?)((?:\.[\-\w\d]*[a-zA-Z][\-\w\d]*(?:\.(?:gz|bz\d?))?)?(?:,v)?)\Z@sa;
+	}
+	die "assert failed" if "$pre$_$post" ne $t;
+
+	push @cacheargs, $_;
+	push @ppargs, [$pre, $_, $post];
+    }
+
+    # @cacheargs must be available here, before calling &$sub
+
+    foreach my $t (@ppargs) {
+	my ($pre, $post);
+	($pre, $_, $post) = @$t;
+	dsay (4, ":  pre=$pre _=$_ post=$post");
+	my $from = $pre . $_ . $post;
+	$_ = eval { &$sub($_) };
+	if ($@) {
+	    error_func "cannot rename \"$from\": $@";
+	    next;
+	}
+	dsay (4, ":  pre=$pre _=$_ post=$post");
+	my $to = $pre . $_ . $post;
+
+	push @ret, [$from, $to];
+    }
+    return @ret;
+}
+
 sub main {
     my @args = @main::ARGV;
 
@@ -76,40 +127,19 @@ sub main {
     my %table;
     my %ftable;
 
-    my @ppargs;
-    foreach my $t (@args) {
-	local $_ = $t;
-	my $pre = '';
-	my $post = '';
+    my @pargs = compute_replace($exp, \@args, noext => $noext, nodir => $nodir);
 
-	if ($nodir and /\//) {
-	    ($pre, $_) = m@\A(.*/)([^/]*)\Z@sa;
-	    next if $_ eq '';
-	}
-	if ($noext and /\./) {
-	    ($_, $post) = m@\A(.*?)((?:\.[\-\w\d]*[a-zA-Z][\-\w\d]*(?:\.(?:gz|bz\d?))?)?(?:,v)?)\Z@sa;
-	}
-	die "assert failed" if "$pre$_$post" ne $t;
-	push @ppargs, [$pre, $_, $post];
-	push @cacheargs, $_;
-    }
+    *error_func = $test ? \&CORE::warn : \&CORE::die;
 
-    my $sub = _make_sub($exp);
-
-    foreach my $a (@ppargs) {
-	my ($pre, $post);
-	($pre, $_, $post) = @$a;
-	dsay (4, ":  pre=$pre _=$_ post=$post");
-	my $from = $pre . $_ . $post;
-	$_ = eval { &$sub($_) };
-	die "cannot rename \"$from\": $@" if ($@);
-	my $to = $pre . $_ . $post;
+    # duplicate check
+    foreach my $a (@pargs) {
+	my ($from, $to) = @$a;
 	if (!$force && !$debug_no_precheck) {
-	    die "cannot rename \"$from\" to \"$to\": file missing\n" unless (-e "$from");
+	    error_func "cannot rename \"$from\" to \"$to\": file missing\n" unless (-e "$from");
 	    if ($from ne $to) {
 		# Here we just check for accidental overwriting with bad expression.
-		die "cannot rename \"$from\": target filename \"$to\" already exists.\n" if (-e "$to");
-		die "cannot rename \"$from\": target filename \"$to\" overwraps with \"$table{$to}\".\n" if (exists $table{$to});
+		error_func "cannot rename \"$from\": target filename \"$to\" already exists.\n" if (-e "$to");
+		error_func "cannot rename \"$from\": target filename \"$to\" overwraps with \"$table{$to}\".\n" if (exists $table{$to});
 	    }
 	}
 	$table{$to} = $from;
@@ -121,13 +151,12 @@ sub main {
     # prevented using the dedicated system call.
     # It is impossible with pure POSIX system APIs.
 
-    foreach my $from (@args) {
-	$_ = $from;
-	my $to = $ftable{$from};
+    foreach my $a (@pargs) {
+	my ($from, $to) = @$a;
 	unless ($from eq $to) {
 	    unless ($test) {
 		if (!$force && !$debug_no_precheck) {
-		    die "cannot rename \"$from\" to \"$to\": file missing\n" unless (-e "$from");
+		    error_func "cannot rename \"$from\" to \"$to\": file missing (!)\n" unless (-e "$from");
 		}
 		unless (&$rename_func($from, $to)) {
 		    die "\Q$from\E -> \Q$to\E: rename failed: $!.\n";
