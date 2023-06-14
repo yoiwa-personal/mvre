@@ -444,7 +444,7 @@ MVRE::def_proc *digits, sub {
 
 # Japanese code conversions
 
-eval {
+{
     use Encode::Guess;
     MVRE::def_proc *utf, sub {
 	my $enc = guess_encoding($_, qw/euc-jp shiftjis utf8 7bit-jis/);
@@ -455,7 +455,7 @@ eval {
 };
 
 eval {
-    eval "use NKF ()"; die if $@;
+    require NKF;
     MVRE::def_proc *mime_decode, sub {
 	s/\=[\_?X]ISO-2022-JP[\_?X]B[\_?X]([0-9A-Za-z\/+]+)=*([\_?X]=)?/NKF::nkf('-mB','-Jw',"$1")/egi;
 	#nkf('-Mb -e',$1)/eg;
@@ -465,18 +465,16 @@ eval {
 # Japanese to Latin romanization
 
 {
-    my $kakasi_defined = 0;
     eval {
-	eval "use Text::Kakasi ()"; die if $@;
+	require Text::Kakasi;
 	MVRE::def_proc *kakasi, sub {
 	    my $kakasi = MVRE::cache {
 		Text::Kakasi->new('kakasi', '-Ha', '-Ka', '-Ja', '-Ea', '-ka', '-iutf8', '-outf8');
 	    };
 	    $_ = $kakasi->get($_);
 	}, '(tries to translate Japanese to Ro-maji) (using library)';
-	$kakasi_defined = 1;
-    };
-    last if $kakasi_defined;
+	1;
+    } and last;
 
     eval {
 	my $found = 0;
@@ -498,6 +496,7 @@ eval {
 	    die "kakasi failed" if $_ eq '';
 	    return $_;
 	}, "(tries to translate Japanese to Ro-maji) (using $kakasi_path)";
+	1;
     };
 }
 
