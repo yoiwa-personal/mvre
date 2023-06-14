@@ -330,10 +330,22 @@ sub Dumper {
 
 sub def_proc(*&$) {
     my ($a, $proc, $help) = @_;
-    my $name = *$a{NAME};
-    my $package = *$a{PACKAGE};
+    my ($name, $package);
+
+    if (ref($a) eq 'GLOB') {
+	$name = *$a{NAME};
+	$package = *$a{PACKAGE};
+    } else {
+	no strict 'refs';
+	$package = caller;
+	$name = $a;
+	$a = \*{"${package}::${name}"};
+    }
+    die unless ref($a) eq 'GLOB';
+
     no warnings 'redefine';
-    *$a = Sub::Util::set_subname("${package}::${name}", $proc);
+    $proc = Sub::Util::set_subname("${package}::${name}", $proc);
+    *$a = $proc;
     $desc{$name} = $help;
 }
 
@@ -341,12 +353,10 @@ sub def_proc(*&$) {
 # define a shortcut with "name", doing r/// or tr/// specified in expr_str.
 
 sub def_regexp($$) {
-    my $package = caller;
     my ($name, $r) = @_;
     my $proc = _make_sub($r);
-    $proc = Sub::Util::set_subname("${package}::${name}", $proc);
-    eval "package $package; \*$name = \$proc; 1" or die $@;
-    $desc{$name} = "$r";
+    @_ = ($name, $proc, $r);
+    goto &def_proc; # to keep caller() as is
 }
 
 # cache(proc)
