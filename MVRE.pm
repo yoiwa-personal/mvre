@@ -265,9 +265,16 @@ BEGIN {
 
 ## APIs for extension writers
 
+package MVRE;
+
 # dsay: show diagnostic message when --debug is given
 
-package MVRE;
+# "undocumented" features of dsay:
+# - first argument can be an integer for the debug messsage level
+#    levels: 1 = user-defined/predefined procedure
+#            3 = MVRE::cache internal state-keeping
+#            4 = MVRE's input processing or other internal
+# - message can be a code reference, which will be called only when needed.
 
 sub dsay (@) {
     my $level = 1;
@@ -282,12 +289,6 @@ sub dsay (@) {
     }
 }
 
-# "undocumented" features:
-# - first argument can be an integer for the debug messsage level
-#    levels: 1 = user-defined/predefined procedure
-#            3 = MVRE::cache internal state-keeping
-#            4 = MVRE's input processing or other internal
-# - message can be a code reference, which will be called only when needed.
 
 # MVRE::Dumper: auto-loaded Data::Dumper
 
@@ -302,16 +303,6 @@ sub Dumper {
 	$_Dumper->Indent(0);
     }
     $_Dumper->Reset()->Values($_[0])->Dump();
-}
-
-# def_regexp(name, expr_str)
-# define a shortcut with "name", doing r/// or tr/// specified in expr_str.
-
-sub def_regexp($$) {
-    my ($k, $r) = @_;
-    eval "sub $k { $r }";
-    die "while defining $k: $@" if $@;
-    $desc{$k} = "$r";
 }
 
 # def_proc(glob, sub, comment)
@@ -344,6 +335,18 @@ sub def_proc(*&$) {
     no warnings 'redefine';
     *$a = Sub::Util::set_subname("${package}::${name}", $proc);
     $desc{$name} = $help;
+}
+
+# def_regexp(name, expr_str)
+# define a shortcut with "name", doing r/// or tr/// specified in expr_str.
+
+sub def_regexp($$) {
+    my $package = caller;
+    my ($name, $r) = @_;
+    my $proc = _make_sub($r);
+    $proc = Sub::Util::set_subname("${package}::${name}", $proc);
+    eval "package $package; \*$name = \$proc; 1" or die $@;
+    $desc{$name} = "$r";
 }
 
 # cache(proc)
