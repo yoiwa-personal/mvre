@@ -17,18 +17,27 @@ sub _make_sub {
     return $_;
 }
 
-use Exporter qw(import);
+use Exporter ();
 
-our @EXPORT = qw(dsay MODIFY_CODE_ATTRIBUTES);
+our @EXPORT = qw(dsay);
 our @EXPORT_OK = qw(def_proc def_regexp cache Dumper);
 our %EXPORT_TAGS =
   (
    all => [],
-   apis => [qw(def_proc def_regexp cache dsay MODIFY_CODE_ATTRIBUTES)],
-   minimal_apis => [qw(dsay MODIFY_CODE_ATTRIBUTES)],
+   apis => [qw(def_proc def_regexp cache dsay)],
+   minimal_apis => [qw(dsay)],
    shortcuts => [],
+   no_attributes => [],
+   # predefined shortcuts are added later
   );
-# predefined shortcuts are added later
+
+sub import (@) {
+    my $no_attributes = grep { $_ eq ':no_attributes' } @_;
+    unless ($no_attributes) {
+	push @UNIVERSAL::ISA, 'MVRE::AttributeHandler';
+    }
+    goto &Exporter::import;
+}
 
 use Getopt::Long 'GetOptionsFromArray';
 Getopt::Long::Configure qw/bundling require_order/;
@@ -394,20 +403,14 @@ sub cache(&) {
     return wantarray ? @r : $r[0];
 }
 
-# experimental support for attributes;
+# attribute-based declaration for shortcut subroutines; see sub import() above for activation.
 
-sub MODIFY_CODE_ATTRIBUTES($$@) {
-    my ($pkg, $ref, @attrs) = @_;
-    my @result = ();
-    foreach my $a (@attrs) {
-	if ($a =~ /\ADesc\((.+)\)\Z/) {
-	    my @subname = split("::", Sub::Util::subname($ref));
-	    $desc{$subname[-1]} = $1;
-	} else {
-	    push @result, $a;
-	}
-    }
-    return @result;
+use Attribute::Handlers;
+sub MVRE::AttributeHandler::Desc :ATTR(CODE,RAWDATA) {
+    my ($package, $symbol, $referent, $attr, $data, $phase,
+	$filename, $linenum) = @_;
+    return unless ref $symbol;
+    $MVRE::desc{*{$symbol}{NAME}} = $data;
 }
 
 # predefined regular expressions
