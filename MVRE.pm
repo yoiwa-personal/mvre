@@ -230,51 +230,50 @@ sub _base_path_fname {
     return $fname;
 }
 
-package MVRE::RenameNoReplace;
-# atomic system call for no-replace rename.
+package MVRE::RenameNoReplace {
+    # atomic system call for no-replace rename.
 
-sub rename_noreplace ($$);
+    sub rename_noreplace ($$);
 
-BEGIN {
-    our $rename_noreplace_supported = undef;
+    BEGIN {
+	our $rename_noreplace_supported = undef;
 
-    if ($^O eq 'linux') {
-	eval {
-	    require 'syscall.ph';
-	    require POSIX;
-	    my $SYS_renameat2 = &SYS_renameat2(); # check for existence
-	    my $AT_FDCWD = -100;      # linux specific value
-	    my $RENAME_NOREPLACE = 1; # linux specific value
+	if ($^O eq 'linux') {
+	    eval {
+		require 'syscall.ph';
+		require POSIX;
+		my $SYS_renameat2 = &SYS_renameat2(); # check for existence
+		my $AT_FDCWD = -100;      # linux specific value
+		my $RENAME_NOREPLACE = 1; # linux specific value
 
-	    sub _rename_noreplace_linux ($$) {
-		my ($from, $to) = @_;
-		$from = $from . "";
-		$to = $to . "";
-		my $r = syscall($SYS_renameat2, $AT_FDCWD, $from, $AT_FDCWD, $to, $RENAME_NOREPLACE);
-		return $r == 0;
-	    }
-	    *rename_noreplace = \&_rename_noreplace_linux;
-	    $rename_noreplace_supported = "linux($SYS_renameat2)";
-	};
-    } elsif ($^O eq 'MSWin32') {
-	eval {
-	    # not tested
-	    require Win32API::File;
-	    sub _rename_noreplace_win32 ($$) {
-		my ($from, $to) = @_;
-	        return Win32API::File::MoveFileEx($from, $to, Win32API::File::MOVEFILE_REPLACE_EXISTING());
-	    }
-	    *rename_noreplace = \&_rename_noreplace_win32;
-	    $rename_noreplace_supported = "Win32API::File";
-	};
+		sub _rename_noreplace_linux ($$) {
+		    my ($from, $to) = @_;
+		    $from = $from . "";
+		    $to = $to . "";
+		    my $r = syscall($SYS_renameat2, $AT_FDCWD, $from, $AT_FDCWD, $to, $RENAME_NOREPLACE);
+		    return $r == 0;
+		}
+		*rename_noreplace = \&_rename_noreplace_linux;
+		$rename_noreplace_supported = "linux($SYS_renameat2)";
+	    };
+	} elsif ($^O eq 'MSWin32') {
+	    eval {
+		# not tested
+		require Win32API::File;
+		sub _rename_noreplace_win32 ($$) {
+		    my ($from, $to) = @_;
+		    return Win32API::File::MoveFileEx($from, $to, Win32API::File::MOVEFILE_REPLACE_EXISTING());
+		}
+		*rename_noreplace = \&_rename_noreplace_win32;
+		$rename_noreplace_supported = "Win32API::File";
+	    };
+	}
+	# TODO: BSD/MacOS (renameatx_np)
+	*rename_noreplace = \&CORE::rename unless defined $rename_noreplace_supported;
     }
-    # TODO: BSD/MacOS (renameatx_np)
-    *rename_noreplace = \&CORE::rename unless defined $rename_noreplace_supported;
 }
 
 ## APIs for extension writers
-
-package MVRE;
 
 # dsay: show diagnostic message when --debug is given
 
