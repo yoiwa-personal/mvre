@@ -9,11 +9,23 @@ use strict;
 
 package MVRE v1.0.1;
 
+BEGIN {
+    eval { require Sub::Util; require Scalar::Util; };
+    if ($@) {
+	eval <<'';
+	sub Sub::Util::set_subname($$) { return $_[1] }
+	sub Scalar::Util::reftype($) { return ref $_[0] }
+
+    }
+}
+
 sub _make_sub {
     # as less lexical variables as possible; before all our and my
 
     local $_ = eval "use strict; package main; sub { { $_[0] ;} return \$_ };";
     die "syntax error on given expression: $@" if $@;
+    die "failed compilation of given expression" unless
+      (ref($_) eq 'CODE' && Scalar::Util::reftype($_) eq 'CODE');
     return $_;
 }
 
@@ -41,11 +53,6 @@ sub import (@) {
 
 use Getopt::Long 'GetOptionsFromArray';
 Getopt::Long::Configure qw/bundling require_order/;
-
-BEGIN {
-    eval { require Sub::Util; };
-    if ($@) { eval 'sub Sub::Util::set_subname($$) { return @_[1] }'; }
-}
 
 our %desc;
 BEGIN { %desc = (); }
@@ -124,7 +131,7 @@ sub main {
 	'no-ext|x' => \$noext,
 	'no-dir|p' => \$nodir,
 	'debug|D+' => \$DEBUG,
-	'debug-noprecheck' => \$debug_no_precheck, # -f only for preparation-phase
+	'debug-no-precheck' => \$debug_no_precheck, # -f only for preparation-phase
 	'help|h' => \$help);
 
     my $exp = shift @args;
@@ -268,8 +275,18 @@ package MVRE::RenameNoReplace {
 		$rename_noreplace_supported = "Win32API::File";
 	    };
 	}
-	# TODO: BSD/MacOS (renameatx_np)
-	*rename_noreplace = \&CORE::rename unless defined $rename_noreplace_supported;
+        # TODO: BSD/MacOS (renameatx_np)
+
+	sub _rename_noreplace_general ($$) {
+	    my ($from, $to) = @_;
+	    if (-e $to) {
+		require Errno;
+		$! = &Errno::EEXIST;
+		return undef;
+	    }
+	    rename($from, $to);
+	}
+	*rename_noreplace = \&_rename_noreplace_general unless defined $rename_noreplace_supported;
     }
 }
 
@@ -713,7 +730,7 @@ limitations under the License.
 
  - an replacement expression can return value, instead of updating $_.
    For example, 'return uc' works.
- - --debug-noprecheck; it will not check files for overwrite, but
+ - --debug-no-precheck; it will not check files for overwrite, but
    use no-replace type of system calls for actual operation if available.
 
 =end comment
