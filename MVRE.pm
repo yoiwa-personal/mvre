@@ -74,7 +74,7 @@ sub compute_replace($$%) {
     my $nodir = $opts{nodir};
     my @ret = ();
 
-    my $sub = _make_sub($exp);
+    my $subr = _make_sub($exp);
 
     foreach my $t (@args) {
 	local $_ = $t;
@@ -94,17 +94,19 @@ sub compute_replace($$%) {
 	push @ppargs, [$pre, $_, $post];
     }
 
-    # @cacheargs must be available here, before calling &$sub
+    # @cacheargs must be available here, before calling &$subr
 
     foreach my $t (@ppargs) {
 	my ($pre, $post);
 	($pre, $_, $post) = @$t;
 	dsay (4, ":  pre=$pre _=$_ post=$post");
 	my $from = $pre . $_ . $post;
-	$_ = eval { &$sub($_) };
+	$_ = eval { &$subr($_) };
 	if ($@) {
 	    error_func "cannot rename \"$from\": $@";
 	    next;
+	} elsif ($_ eq '') {
+	    error_func "cannot rename \"$from\": function resulted to nothing";
 	}
 	dsay (4, ":  pre=$pre _=$_ post=$post");
 	my $to = $pre . $_ . $post;
@@ -409,7 +411,11 @@ sub cache(&) {
     my @r;
     if (!defined $cache{$key}) {
 	my @a = map { $_ . "" } @cacheargs;
-	@r = &$f(@a);
+	if (wantarray) {
+	    @r = &$f(@a);
+	} else {
+	    @r = (scalar &$f(@a));
+	}
 	$cache{$key} = \@r;
 	dsay(3, sub {"cache store with key = $key, value = " . Dumper([\@r])});
     } else {
@@ -618,11 +624,11 @@ To extend, create a script snippet like below (namely, C<mvre>).
     #!/usr/bin/perl
     use lib "<path to MVRE.pm>";
     use MVRE;
-    
+
     ..., put additional shortcut definitions here ...
-    
+
     MVRE::main();
- 
+
 Additional shortcut can be defined using the following APIs.
 
 =head2 MVRE::def_regexp
