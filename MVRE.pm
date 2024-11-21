@@ -573,7 +573,7 @@ This program/module renames each files given in the command line,
 according to the expression given in replace-expr.
 
 Replace-expr may one of C<s///> expression, C<tr///> expression,
-pre-defined shortcuts, or any Oerl statements which will update C<$_>.
+pre-defined shortcuts, or any Perl statements which will update C<$_>.
 
 =head1 OPTIONS
 
